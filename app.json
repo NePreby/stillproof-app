@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "stillproof-app",
+    "name": "Stillproof",
     "slug": "stillproof-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -22,6 +22,14 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Stillproof uses the camera to capture photos and sign them on this device.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
       "expo-secure-store",
       "expo-sharing"
     ]

@@ -93,6 +93,7 @@ jobs:
       # NOTE: no `#` comments inside the block below — it is a literal
       # string, not YAML comments.
       REQUIRED_CHECKS: |-
+        android
         check
       # Top-level path prefixes PRs normally touch. Files outside these
       # are listed in the informational diff note (they do not block

@@ -46,7 +46,7 @@ export const STEPS = ['claim', 'file', 'signature', 'tree', 'anchor'] as const;
 export type Step = (typeof STEPS)[number];
 
 export const KEY_LEVEL = 'software';
-export const CAVEAT = 'This does not prove the scene is genuine. A photo of a screen verifies too.';
+export const CAVEAT = 'This proves the file is unchanged and when it existed. It does not prove the scene is genuine.';
 
 export type Verdict =
   | {

@@ -7,7 +7,8 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "io.github.stillprooflabs.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -20,7 +21,7 @@
       "permissions": [
         "android.permission.CAMERA"
       ],
-      "package": "com.anonymous.stillproofapp"
+      "package": "io.github.stillprooflabs.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"

@@ -1,0 +1,98 @@
+# Stillproof app
+
+**Prove a photo is unedited, and when it was taken.** This is the Stillproof
+capture app, built with React Native and Expo. It takes a photo, fingerprints
+the file on the phone, signs the fingerprint with a key held on the phone, and
+sends the signed claim to an anchoring service. The service batches claims
+into a Merkle tree and records the root on Stellar, then returns a receipt.
+Anyone can check the photo and its receipt, with no account and no trust in
+us.
+
+The protocol is defined in the core repository's
+[`SPEC.md`](https://github.com/stillproof-labs/stillproof/blob/main/SPEC.md).
+This app implements protocol v0 and is tested against the same
+[test vectors](src/protocol/__fixtures__/vectors.json) as the Go
+implementation, so both produce identical bytes.
+
+## What a receipt proves, and what it doesn't
+
+A valid receipt proves three things:
+- the file is unchanged since the device signed it;
+- which device key signed it;
+- that it existed no later than a specific Stellar ledger's close time.
+
+It does not prove the scene is genuine: a photo of a screen verifies too.
+
+Two more limits apply to this version:
+- The capture time on the device clock is only a claim. The ledger close time
+  is the evidence.
+- The signing key is a **software** key kept in the operating system's secure
+  storage (Keychain on iOS, Keystore-encrypted storage on Android). It is not
+  hardware-backed, and every verdict says so. Hardware keys with attestation
+  are planned for milestone 3.
+
+## What it does
+
+- **Capture:** in-app camera only. Photos can't be imported. The app copies
+  the camera's file into its document directory, hashes those exact bytes,
+  signs the claim and posts it to `POST /v1/claims`.
+- **Captures:** every capture with its status (pending, anchored, failed).
+  Pending captures poll `GET /v1/receipts/{id}` until the receipt arrives.
+- **Capture detail:** the verdict once anchored, and sharing of the photo and
+  its receipt (`<id>.stillproof.json`).
+- **Verify:** pick any photo and receipt and check them (SPEC §6). Only the
+  anchor transaction is read from Stellar's Horizon API.
+- **Device key:** the public key and its protection level.
+
+## Layout
+
+| Path | Contents |
+|---|---|
+| `src/protocol/` | Pure TypeScript protocol code with no React: `claim.ts` (build, sign, parse, verify), `merkle.ts` (inclusion proofs), `receipt.ts` (receipt parsing, verification and verdicts) |
+| `src/keys.ts` | The device key, behind an interface that a hardware-backed key can replace |
+| `src/captures.ts`, `src/api.ts` | Local capture storage and the anchoring service client |
+| `src/screens/` | The screens |
+
+## Running
+
+You need Node 24. Install dependencies:
+
+```sh
+npm ci
+```
+
+The app talks to the anchoring service at `EXPO_PUBLIC_ANCHOR_URL`. The
+default, `http://10.0.2.2:8080`, is the host machine as seen from the Android
+emulator, so a local `stillproof-anchor` on port 8080 works out of the box.
+For a phone or another setup, set the variable when starting Metro:
+
+```sh
+EXPO_PUBLIC_ANCHOR_URL=https://anchor.example.org npx expo start
+```
+
+Receipts must be anchored on Stellar **testnet**.
+
+The camera and secure storage are native modules, so run the app in a
+development build rather than Expo Go:
+
+```sh
+npx expo run:android   # or: npx expo run:ios (macOS only)
+```
+
+This requires the Android SDK or Xcode. Android blocks plain `http://`
+traffic in release builds, so use an `https://` service URL there.
+
+## Testing
+
+```sh
+npm test               # Jest: protocol code against the shared vectors
+npx tsc --noEmit       # typecheck
+npx expo lint          # lint
+npx expo-doctor        # Expo dependency and config checks
+```
+
+CI runs all four on every push and pull request.
+
+## License
+
+[Apache-2.0](LICENSE)

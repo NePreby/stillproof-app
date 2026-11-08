@@ -12,8 +12,13 @@ export const HORIZON: Record<Network, string> = {
   mainnet: 'https://horizon.stellar.org',
 };
 
+/** SPEC.md §8.1. The app reads it but does not verify the chain. */
+export type Attestation =
+  | { kind: 'android-key'; chain: string[] }
+  | { kind: 'apple-app-attest'; key_id: string; object: string };
+
 export type Receipt = {
-  v: 0;
+  v: 0 | 1;
   claim: string;
   index: number;
   size: number;
@@ -25,7 +30,11 @@ export type Receipt = {
     tx: string;
     ledger: number;
     closed_at: string;
+    /** v1, §8.2: an Externalize bundle. The app does not check it. */
+    proof?: unknown;
   };
+  /** v1, §8.1. */
+  attestation?: Attestation;
 };
 
 /** The fields of Horizon's GET /transactions/{hash} that verification reads. */
@@ -46,6 +55,14 @@ export const STEPS = ['claim', 'file', 'signature', 'tree', 'anchor'] as const;
 export type Step = (typeof STEPS)[number];
 
 export const KEY_LEVEL = 'software';
+/**
+ * The key level of a receipt that carries an attestation. The app does not
+ * verify attestation chains, so it never reports a hardware level as checked.
+ */
+export const UNCHECKED_LEVEL = 'unchecked';
+export type KeyLevel = typeof KEY_LEVEL | typeof UNCHECKED_LEVEL;
+/** How the app checks step 5. Validator proofs are checked by the web verifier. */
+export const ANCHOR_CHECK = 'horizon';
 export const CAVEAT = 'This proves the file is unchanged and when it existed. It does not prove the scene is genuine.';
 
 export type Verdict =
@@ -57,7 +74,11 @@ export type Verdict =
       ledger: number;
       /** Device clock at capture, unix ms. A claim, not evidence. */
       deviceCaptured: bigint;
-      keyLevel: typeof KEY_LEVEL;
+      keyLevel: KeyLevel;
+      /** The attestation kind the receipt claims, if any. Not verified. */
+      claimedAttestation?: Attestation['kind'];
+      /** True if the receipt carries a validator proof, which the app does not check. */
+      hasValidatorProof?: true;
       caveat: typeof CAVEAT;
     }
   | {
@@ -66,7 +87,11 @@ export type Verdict =
       /** 1-based step number in SPEC.md §6. */
       stepNumber: number;
       reason: string;
-      keyLevel: typeof KEY_LEVEL;
+      keyLevel: KeyLevel;
+      /** The attestation kind the receipt claims, if any. Not verified. */
+      claimedAttestation?: Attestation['kind'];
+      /** True if the receipt carries a validator proof, which the app does not check. */
+      hasValidatorProof?: true;
       caveat: typeof CAVEAT;
     };
 
@@ -77,6 +102,10 @@ export class ReceiptFormatError extends Error {
 const HEX64 = /^[0-9a-f]{64}$/;
 const STELLAR_ACCOUNT = /^G[A-Z2-7]{55}$/;
 const isObject = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
+const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+const isB64 = (x: unknown): x is string => typeof x === 'string' && x.length % 4 === 0 && BASE64.test(x);
+const RECEIPT_FIELDS = new Set(['v', 'claim', 'index', 'size', 'proof', 'root', 'anchor', 'attestation']);
+const ANCHOR_FIELDS = new Set(['network', 'account', 'tx', 'ledger', 'closed_at', 'proof']);
 const isCount = (x: unknown): x is number => Number.isSafeInteger(x) && (x as number) >= 0;
 
 /** Parses receipt JSON and checks its shape. It does not verify anything. */
@@ -91,7 +120,8 @@ export function parseReceipt(json: string): Receipt {
     throw new ReceiptFormatError(`receipt: bad ${what}`);
   };
   if (!isObject(r)) return fail('receipt');
-  if (r.v !== 0) fail('version');
+  if (r.v !== 0 && r.v !== 1) fail('version');
+  for (const k of Object.keys(r)) if (!RECEIPT_FIELDS.has(k)) fail(`field ${k}`);
   if (typeof r.claim !== 'string') fail('claim');
   if (!isCount(r.index)) fail('index');
   if (!isCount(r.size)) fail('size');
@@ -99,11 +129,27 @@ export function parseReceipt(json: string): Receipt {
   if (typeof r.root !== 'string' || !HEX64.test(r.root)) fail('root');
   const a = r.anchor;
   if (!isObject(a)) return fail('anchor');
+  for (const k of Object.keys(a)) if (!ANCHOR_FIELDS.has(k)) fail(`field anchor.${k}`);
   if (a.network !== 'testnet' && a.network !== 'mainnet') fail('anchor.network');
   if (typeof a.account !== 'string' || !STELLAR_ACCOUNT.test(a.account)) fail('anchor.account');
   if (typeof a.tx !== 'string' || !HEX64.test(a.tx)) fail('anchor.tx');
   if (!isCount(a.ledger)) fail('anchor.ledger');
   if (typeof a.closed_at !== 'string' || Number.isNaN(Date.parse(a.closed_at))) fail('anchor.closed_at');
+  // v1 fields, §8. A v0 receipt has none of them.
+  if ('proof' in a && (r.v !== 1 || !isObject(a.proof))) fail('anchor.proof');
+  if ('attestation' in r) {
+    const t = r.attestation;
+    if (r.v !== 1 || !isObject(t)) return fail('attestation');
+    const keys = Object.keys(t).sort().join(',');
+    const ok =
+      (t.kind === 'android-key' &&
+        keys === 'chain,kind' &&
+        Array.isArray(t.chain) &&
+        t.chain.length > 0 &&
+        t.chain.every(isB64)) ||
+      (t.kind === 'apple-app-attest' && keys === 'key_id,kind,object' && isB64(t.key_id) && isB64(t.object));
+    if (!ok) fail('attestation');
+  }
   return r as Receipt;
 }
 
@@ -151,7 +197,12 @@ async function checkAnchor(receipt: Receipt, fetchTx: FetchTx): Promise<void> {
 
 /** Verifies a file against its receipt, SPEC.md §6 steps 1–5, and reports the verdict (step 6). */
 export async function verifyReceipt(fileBytes: Uint8Array, receipt: Receipt, fetchTx: FetchTx): Promise<Verdict> {
-  const base = { keyLevel: KEY_LEVEL, caveat: CAVEAT } as const;
+  const base = {
+    keyLevel: receipt.attestation ? UNCHECKED_LEVEL : KEY_LEVEL,
+    ...(receipt.attestation && { claimedAttestation: receipt.attestation.kind }),
+    ...(receipt.anchor.proof !== undefined && { hasValidatorProof: true as const }),
+    caveat: CAVEAT,
+  } as const;
   try {
     let claim: SignedClaim;
     try {
@@ -205,16 +256,28 @@ export function formatCaptured(ms: bigint): string {
   return Number.isNaN(d.getTime()) ? `${ms} ms since the Unix epoch` : d.toISOString();
 }
 
+/** The levels an attestation kind can claim (SPEC.md §8.1), as the receipt alone tells them. */
+export const CLAIMED_LEVEL: Record<Attestation['kind'], string> = {
+  'android-key': 'tee or strongbox',
+  'apple-app-attest': 'secure-enclave',
+};
+
+/** The key level line. A claimed hardware level is never shown as checked. */
+export function keyLevelLine(v: Verdict): string {
+  if (v.keyLevel === KEY_LEVEL || !v.claimedAttestation) return `Key level: ${KEY_LEVEL}`;
+  return `Key level: ${CLAIMED_LEVEL[v.claimedAttestation]}, as claimed by its ${v.claimedAttestation} attestation. Not checked by this app.`;
+}
+
 /** Human-readable lines for a verdict, as SPEC.md §6 step 6 requires. */
 export function verdictLines(v: Verdict): string[] {
   if (!v.ok) {
-    return [`Failed at step ${v.stepNumber} (${v.failedStep}): ${v.reason}`, `Key level: ${v.keyLevel}`, v.caveat];
+    return [`Failed at step ${v.stepNumber} (${v.failedStep}): ${v.reason}`, keyLevelLine(v), v.caveat];
   }
   return [
     `Unchanged since signed by key ${v.key}.`,
     `Existed no later than ${v.existedNoLaterThan} (ledger ${v.ledger}).`,
     `Device-claimed capture time: ${formatCaptured(v.deviceCaptured)} (the device clock is a claim, not evidence).`,
-    `Key level: ${v.keyLevel}`,
+    keyLevelLine(v),
     v.caveat,
   ];
 }

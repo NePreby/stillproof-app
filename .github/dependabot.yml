@@ -8,6 +8,22 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+    ignore:
+      # The Expo SDK pins these; they move with `npx expo install --fix` on an SDK upgrade.
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "@expo/*"
+      - dependency-name: "react"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@types/react"
+      - dependency-name: "jest-expo"
+      - dependency-name: "eslint-config-expo"
+      # Majors wait until eslint-config-expo and typescript-eslint support them.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

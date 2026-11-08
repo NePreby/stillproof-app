@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Text } from 'react-native';
 
-import { ErrorText, Field, Screen, styles as ui } from '../components/ui';
-import { ANCHOR_URL, NETWORK } from '../config';
+import { AnchorSetting } from '../components/AnchorSetting';
+import { Blank, Body, Busy, ErrorText, Field, Rule, Screen } from '../components/ui';
+import { NETWORK } from '../config';
 import { deviceKey, type DeviceKey } from '../keys';
 
 export default function KeyScreen() {
@@ -13,18 +13,31 @@ export default function KeyScreen() {
     deviceKey().then(setKey, (e) => setError(e instanceof Error ? e.message : String(e)));
   }, []);
 
-  if (error) return <ErrorText>{error}</ErrorText>;
-  if (!key) return <ActivityIndicator accessibilityLabel="Loading the device key" />;
+  if (error) {
+    return (
+      <Blank>
+        <ErrorText>Could not load the device key: {error}</ErrorText>
+      </Blank>
+    );
+  }
+  if (!key) {
+    return (
+      <Blank>
+        <Busy label="Loading the device key" />
+      </Blank>
+    );
+  }
 
   return (
     <Screen>
-      <Field label="Public key (P-256, SEC1 uncompressed)" value={key.publicKey()} mono />
+      <Field label="Public key · P-256 · SEC1 uncompressed" value={key.publicKey()} mono />
       <Field label="Key level" value={key.level} />
-      <Text style={ui.label}>
+      <Body muted>
         This is a software key held in the operating system&apos;s secure storage. Hardware-backed keys arrive in a
         later version.
-      </Text>
-      <Field label="Anchoring service" value={ANCHOR_URL} mono />
+      </Body>
+      <Rule />
+      <AnchorSetting />
       <Field label="Network" value={NETWORK} />
     </Screen>
   );

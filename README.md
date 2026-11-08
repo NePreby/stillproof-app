@@ -40,17 +40,31 @@ Two more limits apply to this version:
   Pending captures poll `GET /v1/receipts/{id}` until the receipt arrives.
 - **Capture detail:** the verdict once anchored, and sharing of the photo and
   its receipt (`<id>.stillproof.json`).
-- **Verify:** pick any photo and receipt and check them (SPEC §6). Only the
-  anchor transaction is read from Stellar's Horizon API.
-- **Device key:** the public key and its protection level.
+- **Check a photo:** pick a photo from the library or Files, with or without
+  a receipt file, and check it (SPEC §6). With no receipt file, the app reads
+  a receipt embedded as C2PA (SPEC §8.3), or else looks the file's SHA-256 up
+  with `GET /v1/receipts?sha256=` (SPEC §8.4). Checking never anchors
+  anything. Only the anchor transaction is read from Stellar's Horizon API.
+  The app reads receipt v1 fields but doesn't verify attestation chains or
+  Externalize proofs: it shows a claimed key level as claimed and points to
+  the [web verifier](https://stillproof-labs.github.io/stillproof/).
+- **Key and service:** the public key, its protection level, and the
+  anchoring service URL, which can be changed at runtime.
+
+The look follows the core repository's
+[`docs/DESIGN.md`](https://github.com/stillproof-labs/stillproof/blob/main/docs/DESIGN.md):
+darkroom (dark, the default) and print (light, when the system is light).
+
 
 ## Layout
 
 | Path | Contents |
 |---|---|
-| `src/protocol/` | Pure TypeScript protocol code with no React: `claim.ts` (build, sign, parse, verify), `merkle.ts` (inclusion proofs), `receipt.ts` (receipt parsing, verification and verdicts) |
+| `src/protocol/` | Pure TypeScript protocol code with no React: `claim.ts` (build, sign, parse, verify), `merkle.ts` (inclusion proofs), `receipt.ts` (receipt v0 and v1 parsing, verification and verdicts), `c2pa.ts` (reads an embedded receipt) |
 | `src/keys.ts` | The device key, behind an interface that a hardware-backed key can replace |
-| `src/captures.ts`, `src/api.ts` | Local capture storage and the anchoring service client |
+| `src/captures.ts`, `src/api.ts`, `src/anchorUrl.ts` | Local capture storage, the anchoring service client and its stored URL |
+| `src/check.ts` | Checking a photo you didn't take |
+| `src/theme.ts`, `src/design/`, `src/components/` | The design system |
 | `src/screens/` | The screens |
 
 ## Running
@@ -61,8 +75,9 @@ You need Node 24. Install dependencies:
 npm ci
 ```
 
-The app talks to the anchoring service at `EXPO_PUBLIC_ANCHOR_URL`. The
-default, `http://10.0.2.2:8080`, is the host machine as seen from the Android
+The app talks to the anchoring service at `EXPO_PUBLIC_ANCHOR_URL` unless
+the URL is changed on the Key and service screen (stored on the device). The
+build-time default, `http://10.0.2.2:8080`, is the host machine as seen from the Android
 emulator, so a local `stillproof-anchor` on port 8080 works out of the box.
 For a phone or another setup, set the variable when starting Metro:
 

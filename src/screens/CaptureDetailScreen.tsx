@@ -1,14 +1,23 @@
 import * as Sharing from 'expo-sharing';
 import { useEffect, useState } from 'react';
-import { Image, StyleSheet, Text } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
-import { photoFile, receiptFile, submit, useCapture } from '../captures';
-import { Button, ErrorText, Field, Screen, VerdictView, styles as ui } from '../components/ui';
+import { photoFile, receiptFile, submit, useCaptures } from '../captures';
+import { Hash } from '../components/Fingerprint';
+import { PrintFrame } from '../components/PrintFrame';
+import { ProofStrip } from '../components/ProofStrip';
+import { Blank, Body, Button, EdgeLabel, ErrorText, Field, Rule, Screen } from '../components/ui';
+import { edge, edgeTime, frameNumber } from '../design/format';
 import type { ScreenProps } from '../navigation';
-import { KEY_LEVEL, formatCaptured, horizonFetchTx, parseReceipt, verifyReceipt, type Verdict } from '../protocol/receipt';
+import { parseSignedClaim } from '../protocol/claim';
+import { KEY_LEVEL, formatCaptured, horizonFetchTx, parseReceipt, verifyReceipt, type Receipt, type Verdict } from '../protocol/receipt';
+import { space } from '../theme';
 
 export default function CaptureDetailScreen({ route }: ScreenProps<'Detail'>) {
-  const capture = useCapture(route.params.id);
+  const captures = useCaptures();
+  const index = captures.findIndex((x) => x.id === route.params.id);
+  const capture = captures[index];
+  const [receipt, setReceipt] = useState<Receipt>();
   const [verdict, setVerdict] = useState<Verdict>();
   const [verifyError, setVerifyError] = useState<string>();
   const [shareError, setShareError] = useState<string>();
@@ -19,8 +28,9 @@ export default function CaptureDetailScreen({ route }: ScreenProps<'Detail'>) {
     let live = true;
     (async () => {
       const bytes = await photoFile(capture).bytes();
-      const receipt = parseReceipt(await receiptFile(capture).text());
-      const v = await verifyReceipt(bytes, receipt, horizonFetchTx());
+      const r = parseReceipt(await receiptFile(capture).text());
+      if (live) setReceipt(r);
+      const v = await verifyReceipt(bytes, r, horizonFetchTx());
       if (live) setVerdict(v);
     })().catch((e) => live && setVerifyError(e instanceof Error ? e.message : String(e)));
     return () => {
@@ -30,9 +40,20 @@ export default function CaptureDetailScreen({ route }: ScreenProps<'Detail'>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [capture?.id, anchored]);
 
-  if (!capture) return <ErrorText>This capture no longer exists.</ErrorText>;
+  if (!capture) {
+    return (
+      <Blank>
+        <ErrorText>This frame no longer exists.</ErrorText>
+      </Blank>
+    );
+  }
+
+  const frame = frameNumber(captures.length - index);
+  const time = edgeTime(Number(capture.captured)) ?? formatCaptured(BigInt(capture.captured));
+  const fileHash = parseSignedClaim(capture.signed).sha256;
 
   const share = async (uri: string, mimeType: string) => {
+    setShareError(undefined);
     try {
       await Sharing.shareAsync(uri, { mimeType });
     } catch (e) {
@@ -42,35 +63,47 @@ export default function CaptureDetailScreen({ route }: ScreenProps<'Detail'>) {
 
   return (
     <Screen>
-      <Image
-        source={{ uri: photoFile(capture).uri }}
-        style={styles.photo}
-        resizeMode="contain"
-        accessibilityLabel="The captured photo"
+      <PrintFrame
+        uri={photoFile(capture).uri}
+        label={`Frame ${frame}, the captured photo`}
+        edge={edge(`Frame ${frame}`, time, receipt && `Ledger ${receipt.anchor.ledger}`)}
       />
-      <Field label="Status" value={capture.status} />
-      {capture.error && <ErrorText>{capture.error}</ErrorText>}
-      <Field label="Device-claimed capture time" value={formatCaptured(BigInt(capture.captured))} />
-      <Field label="Claim id" value={capture.id} mono />
-      <Field label="Key level" value={KEY_LEVEL} />
 
-      {capture.status === 'failed' && <Button title="Submit again" onPress={() => void submit(capture)} />}
       {capture.status === 'pending' && (
-        <Text style={ui.value}>Waiting for the service to anchor this claim on Stellar.</Text>
+        <View style={styles.block}>
+          <EdgeLabel>Pending</EdgeLabel>
+          <Body>Signed on this phone. Waiting for the service to anchor the claim on Stellar.</Body>
+        </View>
       )}
-      {anchored && !verifyError && <VerdictView verdict={verdict ?? 'checking'} />}
+      {capture.status === 'failed' && (
+        <View style={styles.block}>
+          <EdgeLabel>Not anchored</EdgeLabel>
+          {capture.error && <ErrorText>{capture.error}</ErrorText>}
+          <Button primary title="Submit again" label="Submit the claim again" onPress={() => void submit(capture)} />
+        </View>
+      )}
+      {anchored && !verifyError && <ProofStrip verdict={verdict ?? 'checking'} />}
       {verifyError && <ErrorText>Could not check the receipt: {verifyError}</ErrorText>}
 
-      <Button title="Share photo" onPress={() => void share(photoFile(capture).uri, capture.type)} />
-      {anchored && (
-        <Button title="Share receipt" onPress={() => void share(receiptFile(capture).uri, 'application/json')} />
-      )}
-      {anchored && <Text style={ui.label}>Send both files: the receipt only verifies with the original photo.</Text>}
-      {shareError && <ErrorText>{shareError}</ErrorText>}
+      <Rule />
+      <Hash label="File SHA-256" sha256={fileHash} />
+      <Hash label="Claim id" sha256={capture.id} />
+      <Field label="Device clock at capture" value={time} />
+      {!anchored && <Field label="Key level" value={KEY_LEVEL} />}
+
+      <Rule />
+      <View style={styles.block}>
+        <Button title="Share photo" onPress={() => void share(photoFile(capture).uri, capture.type)} />
+        {anchored && (
+          <Button title="Share receipt" onPress={() => void share(receiptFile(capture).uri, 'application/json')} />
+        )}
+        {anchored && <Body muted>Send both files. The receipt only verifies with the original photo.</Body>}
+        {shareError && <ErrorText>Could not share: {shareError}</ErrorText>}
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  photo: { width: '100%', aspectRatio: 3 / 4, backgroundColor: '#000' },
+  block: { gap: space[2] },
 });

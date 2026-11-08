@@ -99,7 +99,7 @@ describe('parseReceipt rejects', () => {
   const good = receiptFor(0);
   it.each([
     ['not JSON', '{'],
-    ['wrong version', JSON.stringify({ ...good, v: 1 })],
+    ['wrong version', JSON.stringify({ ...good, v: 2 })],
     ['uppercase root', JSON.stringify({ ...good, root: good.root.toUpperCase() })],
     ['bad proof', JSON.stringify({ ...good, proof: ['zz'] })],
     ['negative index', JSON.stringify({ ...good, index: -1 })],

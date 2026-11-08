@@ -1,21 +1,43 @@
-import { useEffect } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useLayoutEffect } from 'react';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { pollPending, useCaptures, type Capture } from '../captures';
-import { Button, styles as ui } from '../components/ui';
-import { POLL_MS } from '../config';
+import { photoFile, pollPending, useCaptures, type Capture } from '../captures';
+import { ContactSheet } from '../components/ContactSheet';
+import { Body, Button, EdgeLabel, Rule } from '../components/ui';
+import { NETWORK, POLL_MS } from '../config';
+import { edge, edgeTime, frameNumber } from '../design/format';
 import type { ScreenProps } from '../navigation';
-import { formatCaptured } from '../protocol/receipt';
+import { space, useTheme } from '../theme';
 
-const STATUS_LABEL: Record<Capture['status'], string> = {
-  pending: 'Pending: waiting for the anchor',
-  anchored: 'Anchored',
-  failed: 'Failed',
+const STATUS: Record<Capture['status'], string> = {
+  pending: 'pending, waiting for the anchor',
+  anchored: 'anchored',
+  failed: 'failed',
 };
 
 export default function CapturesScreen({ navigation }: ScreenProps<'Captures'>) {
+  const { c } = useTheme();
+  const insets = useSafeAreaInsets();
   const captures = useCaptures();
-  const anyPending = captures.some((c) => c.status === 'pending');
+  const anyPending = captures.some((x) => x.status === 'pending');
+  const counts = { pending: 0, anchored: 0, failed: 0 };
+  captures.forEach((x) => counts[x.status]++);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Device key and anchoring service"
+          onPress={() => navigation.navigate('Key')}
+          hitSlop={12}
+        >
+          <EdgeLabel style={{ color: c.text }}>Key · Service</EdgeLabel>
+        </Pressable>
+      ),
+    });
+  }, [navigation, c.text]);
 
   useEffect(() => {
     if (!anyPending) return;
@@ -24,38 +46,60 @@ export default function CapturesScreen({ navigation }: ScreenProps<'Captures'>) 
     return () => clearInterval(timer);
   }, [anyPending]);
 
+  const frames = captures.map((x, i) => {
+    const frame = frameNumber(captures.length - i);
+    const time = edgeTime(Number(x.captured)) ?? 'unknown time';
+    return {
+      key: x.id,
+      uri: photoFile(x).uri,
+      frame,
+      status: x.status,
+      label: `Frame ${frame}, ${STATUS[x.status]}, device clock ${time}`,
+      onPress: () => navigation.navigate('Detail', { id: x.id }),
+    };
+  });
+
   return (
-    <FlatList
-      data={captures}
-      keyExtractor={(c) => c.id}
-      contentContainerStyle={ui.screen}
-      ListHeaderComponent={
-        <View style={styles.actions}>
-          <Button title="Capture a photo" onPress={() => navigation.navigate('Capture')} />
-          <Button title="Verify a file" onPress={() => navigation.navigate('Verify')} />
-          <Button title="Device key" onPress={() => navigation.navigate('Key')} />
+    <View style={[styles.root, { backgroundColor: c.bg }]}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <EdgeLabel>
+          {edge(
+            `${captures.length} ${captures.length === 1 ? 'frame' : 'frames'}`,
+            counts.anchored > 0 && `${counts.anchored} anchored`,
+            counts.pending > 0 && `${counts.pending} pending`,
+            counts.failed > 0 && `${counts.failed} failed`,
+            NETWORK,
+          )}
+        </EdgeLabel>
+        {captures.length === 0 ? (
+          <View style={styles.empty}>
+            <Body>No frames yet.</Body>
+            <Body muted>
+              Each photo you take here is signed on this phone and its hash is anchored on Stellar. The photo stays on
+              the phone.
+            </Body>
+          </View>
+        ) : (
+          <ContactSheet frames={frames} />
+        )}
+      </ScrollView>
+      <Rule />
+      <View style={[styles.bar, { paddingBottom: insets.bottom + space[3] }]}>
+        <View style={styles.flex}>
+          <Button title="Check a photo" onPress={() => navigation.navigate('Verify')} />
         </View>
-      }
-      ListEmptyComponent={<Text style={ui.value}>No captures yet.</Text>}
-      renderItem={({ item }) => (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`Capture from ${formatCaptured(BigInt(item.captured))}, ${STATUS_LABEL[item.status]}`}
-          onPress={() => navigation.navigate('Detail', { id: item.id })}
-          style={styles.row}
-        >
-          <Text style={ui.value}>{formatCaptured(BigInt(item.captured))}</Text>
-          <Text style={[ui.label, item.status === 'failed' && ui.error]}>{STATUS_LABEL[item.status]}</Text>
-          <Text style={ui.mono} numberOfLines={1}>
-            {item.id}
-          </Text>
-        </Pressable>
-      )}
-    />
+        <View style={styles.flex}>
+          <Button primary title="Capture" label="Capture a photo" onPress={() => navigation.navigate('Capture')} />
+        </View>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  actions: { gap: 8, marginBottom: 8 },
-  row: { padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#ddd', gap: 4 },
+  root: { flex: 1 },
+  content: { padding: space[4], gap: space[4] },
+  empty: { gap: space[3], paddingVertical: space[6] },
+  bar: { flexDirection: 'row', gap: space[2], paddingHorizontal: space[4], paddingTop: space[3] },
+  flex: { flex: 1 },
 });

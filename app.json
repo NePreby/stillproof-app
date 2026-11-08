@@ -36,7 +36,8 @@
         }
       ],
       "expo-secure-store",
-      "expo-sharing"
+      "expo-sharing",
+      "./modules/stillproof-keys/app.plugin.js"
     ]
   }
 }

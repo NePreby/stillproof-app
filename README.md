@@ -26,10 +26,14 @@ It does not prove the scene is genuine: a photo of a screen verifies too.
 Two more limits apply to this version:
 - The capture time on the device clock is only a claim. The ledger close time
   is the evidence.
-- The signing key is a **software** key kept in the operating system's secure
-  storage (Keychain on iOS, Keystore-encrypted storage on Android). It is not
-  hardware-backed, and every verdict says so. Hardware keys with attestation
-  are planned for milestone 3.
+- Where it can, the app makes a hardware key: AndroidKeyStore (StrongBox,
+  else the TEE) with a key attestation chain, or a Secure Enclave key bound to
+  the app by App Attest (`modules/stillproof-keys`). It registers the
+  attestation with `POST /v1/keys` (SPEC §8.4). Until the anchoring service
+  accepts it, the key is labelled **software**, and so is a key the service
+  rejects. Without hardware the app uses a software key in the operating
+  system's secure storage. An existing software key stays until you tap
+  **New key**.
 
 ## What it does
 
@@ -42,14 +46,15 @@ Two more limits apply to this version:
   its receipt (`<id>.stillproof.json`).
 - **Verify:** pick any photo and receipt and check them (SPEC §6). Only the
   anchor transaction is read from Stellar's Horizon API.
-- **Device key:** the public key and its protection level.
+- **Device key:** the public key, its level, the attestation's status, and **New key**.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
 | `src/protocol/` | Pure TypeScript protocol code with no React: `claim.ts` (build, sign, parse, verify), `merkle.ts` (inclusion proofs), `receipt.ts` (receipt parsing, verification and verdicts) |
-| `src/keys.ts` | The device key, behind an interface that a hardware-backed key can replace |
+| `src/keys.ts` | The device key: hardware where the device and the anchoring service allow, else software |
+| `modules/stillproof-keys/` | Local Expo module: the Android Keystore (Kotlin) and Secure Enclave / App Attest (Swift) key |
 | `src/captures.ts`, `src/api.ts` | Local capture storage and the anchoring service client |
 | `src/screens/` | The screens |
 

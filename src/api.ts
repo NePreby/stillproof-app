@@ -1,4 +1,5 @@
 // Client for the anchoring service, SPEC.md §7.
+import type { Attestation } from '../modules/stillproof-keys';
 import { anchorUrl } from './anchorUrl';
 import { parseReceipt, type Receipt } from './protocol/receipt';
 
@@ -50,4 +51,27 @@ export async function lookupReceipts(sha256: string, fetchFn: typeof fetch = fet
       return { receipt: parseReceipt(json), json };
     }),
   };
+}
+
+export type KeyRegistration = { accepted: true } | { accepted: false; reason: string };
+
+const REGISTER_TIMEOUT_MS = 15000;
+
+/** Registers a key's attestation, SPEC.md §8.4. Throws if the service can't be reached. */
+export async function registerKey(key: string, attestation: Attestation): Promise<KeyRegistration> {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), REGISTER_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${await anchorUrl()}/v1/keys`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, attestation }),
+      signal: abort.signal,
+    });
+    if (res.status === 204) return { accepted: true };
+    if (res.status === 400) return { accepted: false, reason: (await res.text()).trim() || 'attestation rejected' };
+    throw new Error(`service returned ${res.status}`);
+  } finally {
+    clearTimeout(timer);
+  }
 }

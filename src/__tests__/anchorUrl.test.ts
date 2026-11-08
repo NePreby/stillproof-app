@@ -18,8 +18,8 @@ beforeEach(() => {
 
 describe('normalizeAnchorUrl', () => {
   it.each([
-    ['https://abc.trycloudflare.com', 'https://abc.trycloudflare.com'],
-    ['  HTTPS://Abc.Ngrok-Free.app/ ', 'https://abc.ngrok-free.app'],
+    ['https://tunnel.example.com', 'https://tunnel.example.com'],
+    ['  HTTPS://Anchor.Example.ORG/ ', 'https://anchor.example.org'],
     ['http://192.168.1.20:8080', 'http://192.168.1.20:8080'],
     ['http://10.0.2.2:8080//', 'http://10.0.2.2:8080'],
     ['https://example.com/anchor/', 'https://example.com/anchor'],

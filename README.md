@@ -26,10 +26,14 @@ It does not prove the scene is genuine: a photo of a screen verifies too.
 Two more limits apply to this version:
 - The capture time on the device clock is only a claim. The ledger close time
   is the evidence.
-- The signing key is a **software** key kept in the operating system's secure
-  storage (Keychain on iOS, Keystore-encrypted storage on Android). It is not
-  hardware-backed, and every verdict says so. Hardware keys with attestation
-  are planned for milestone 3.
+- Where it can, the app makes a hardware key: AndroidKeyStore (StrongBox,
+  else the TEE) with a key attestation chain, or a Secure Enclave key bound to
+  the app by App Attest (`modules/stillproof-keys`). It registers the
+  attestation with `POST /v1/keys` (SPEC §8.4). Until the anchoring service
+  accepts it, the key is labelled **software**, and so is a key the service
+  rejects. Without hardware the app uses a software key in the operating
+  system's secure storage. An existing software key stays until you tap
+  **New key**.
 
 ## What it does
 
@@ -48,8 +52,8 @@ Two more limits apply to this version:
   The app reads receipt v1 fields but doesn't verify attestation chains or
   Externalize proofs: it shows a claimed key level as claimed and points to
   the [web verifier](https://stillproof-labs.github.io/stillproof/).
-- **Key and service:** the public key, its protection level, and the
-  anchoring service URL, which can be changed at runtime.
+- **Key and service:** the public key, its level, the attestation's status,
+  **New key**, and the anchoring service URL, which can be changed at runtime.
 
 The look follows the core repository's
 [`docs/DESIGN.md`](https://github.com/stillproof-labs/stillproof/blob/main/docs/DESIGN.md):
@@ -61,7 +65,8 @@ darkroom (dark, the default) and print (light, when the system is light).
 | Path | Contents |
 |---|---|
 | `src/protocol/` | Pure TypeScript protocol code with no React: `claim.ts` (build, sign, parse, verify), `merkle.ts` (inclusion proofs), `receipt.ts` (receipt v0 and v1 parsing, verification and verdicts), `c2pa.ts` (reads an embedded receipt) |
-| `src/keys.ts` | The device key, behind an interface that a hardware-backed key can replace |
+| `src/keys.ts` | The device key: hardware where the device and the anchoring service allow, else software |
+| `modules/stillproof-keys/` | Local Expo module: the Android Keystore (Kotlin) and Secure Enclave / App Attest (Swift) key |
 | `src/captures.ts`, `src/api.ts`, `src/anchorUrl.ts` | Local capture storage, the anchoring service client and its stored URL |
 | `src/check.ts` | Checking a photo you didn't take |
 | `src/theme.ts`, `src/design/`, `src/components/` | The design system |

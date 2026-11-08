@@ -56,7 +56,8 @@
           "microphonePermission": false
         }
       ],
-      "expo-font"
+      "expo-font",
+      "./modules/stillproof-keys/app.plugin.js"
     ],
     "backgroundColor": "#0F0E0C"
   }

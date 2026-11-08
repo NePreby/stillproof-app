@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["StillproofKeysModule"]
+  },
+  "android": {
+    "modules": ["io.github.stillprooflabs.keys.StillproofKeysModule"]
+  }
+}
